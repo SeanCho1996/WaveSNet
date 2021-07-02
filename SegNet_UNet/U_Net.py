@@ -7,6 +7,7 @@ from SegNet_UNet import *
 import torch
 __all__ = [
     'U_Net_VGG',
+    'U_Net_wavelet_VGG',
 ]
 
 
@@ -49,6 +50,47 @@ class U_Net_VGG(nn.Module):
 
     def __str__(self):
         return 'U_Net_VGG'
+
+
+class U_Net_Wavelet_VGG(nn.Module):
+    def __init__(self, features, num_classes = 21, init_weights = True, wavename = None):
+        super(U_Net_VGG, self).__init__()
+        self.features = features[0]
+        self.decoders = features[1]
+        self.classifier_seg = nn.Sequential(
+            #nn.Conv2d(64, 64, kernel_size = 3, padding = 1),
+            #nn.ReLU(True),
+            nn.Conv2d(64, num_classes, kernel_size = 1, padding = 0),
+        )
+        if init_weights:
+            self._initialize_weights()
+
+    def forward(self, x):
+        xx = self.features(x)
+        x, [(LH1,HL1,HH1,o1), (LH2,HL2,HH2,o2), (LH3,HL3,HH3,o3), (LH4,HL4,HH4,o4), (LH5,HL5,HH5,o5)] = xx
+        x = self.decoders(x, LH5,HL5,HH5,o5, LH4,HL4,HH4,o4, LH3,HL3,HH3,o3, LH2,HL2,HH2,o2, LH1,HL1,HH1,o1)
+        x = self.classifier_seg(x)
+        return x
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                if(m.in_channels != m.out_channels or m.out_channels != m.groups or m.bias is not None):
+                    # don't want to reinitialize downsample layers, code assuming normal conv layers will not have these characteristics
+                    nn.init.kaiming_normal_(m.weight, mode = 'fan_out', nonlinearity = 'relu')
+                    if m.bias is not None:
+                        nn.init.constant_(m.bias, 0)
+                else:
+                    print('Not initializing')
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.constant_(m.bias, 0)
+
+    def __str__(self):
+        return 'U_Net_Wavelet_VGG'
 
 
 def make_layers(cfg, batch_norm = False):
@@ -207,6 +249,18 @@ def unet_vgg16_bn(pretrained=False, **kwargs):
     if pretrained:
         kwargs['init_weights'] = False
     model = U_Net_VGG(make_layers(cfg['D'], batch_norm=True), **kwargs)
+    return model
+
+
+def unet_vgg16_w_bn(pretrained=False, **kwargs):
+    """VGG 16-layer model (configuration "D") with batch normalization
+
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+    """
+    if pretrained:
+        kwargs['init_weights'] = False
+    model = U_Net_Wavelet_VGG(make_w_layers(cfg['D'], batch_norm=True), **kwargs)
     return model
 
 
